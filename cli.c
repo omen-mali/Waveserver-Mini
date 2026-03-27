@@ -246,18 +246,35 @@ void cmd_show_traffic_stats(void)
  */
 void cmd_show_logs(const char *level_filter, const char *service_filter)
 {
-    // TODO: F5 — Show Logs with Filtering (/3 pts)
-    //
-    // Read the shared log file (see LOG_FILE_PATH in common.h) and print its contents.
-    //
-    // Log lines follow this format:
-    //   [timestamp] [LEVEL] [service] [file:line] message
-    //
-    // Filtering rules:
-    //   - level_filter: if provided, only show lines whose level tag matches (i.e., "ERROR", "WARN", "DEBUG", "INFO"). 
-    //   - service_filter: if provided, only show lines from that service (i.e., "port_mgr", "conn_mgr", "traffic_mgr", "cli")
-    //   - Both filters can be active at the same time, and should be case insensitive
-    //   - If neither filter is set, print everything.
+    //Open log file
+    FILE* f = fopen(LOG_FILE_PATH, "r");
+
+    //Iterate lines
+    char buffer[1024];
+    while (fgets(buffer, 1024, f) > 0)
+    {
+        //Hop to the start of the log level based on positions of opening brackets
+        int level_pos = 0;
+        for (;buffer[level_pos] != '['; level_pos++){}
+        level_pos++;
+        for (;buffer[level_pos] != '['; level_pos++){}
+        level_pos++;
+        //Test if level matches filter
+        if (level_filter && strncmp(buffer+level_pos, level_filter, strlen(level_filter)))
+        {
+            continue;
+        }
+        //Same technique as above
+        int service_pos = level_pos+1;
+        for(;buffer[service_pos] != '['; service_pos++){}
+        service_pos++;
+        if (service_filter && strncmp(buffer+service_pos, service_filter, strlen(service_filter)))
+        {
+            continue;
+        }
+        //Newline is included in buffer
+        printf("%s", buffer);
+    }
 }
 
 /**
