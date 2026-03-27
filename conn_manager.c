@@ -145,14 +145,86 @@ void handle_lookup_connection(const udp_message_t *req, udp_message_t *resp)
 
 void handle_create_connection(const udp_message_t *req, udp_message_t *resp)
 {
-    // TODO: F3 — Create Connection Handler (/5 pts)
-    //
-    // Implement the logic to create a new connection between a line port
-    // and a client port. The request payload tells you the desired name for the connection
-    // and port pair — see common.h for the struct.
-    //
-    // Refer to the HLD for connection creation validation instructions.
-    // Use set_error_msg() to report *why* a create was rejected.
+    const udp_create_conn_request_t *payload = (const udp_create_conn_request_t *)req->payload;
+    //Validation
+    //  Client port must be a client port (3-6)
+    if (payload->client_port < 3 || payload->client_port > 6)
+    {
+        resp->status = STATUS_FAILURE;
+        set_error_msg(resp, "Invalid client port");
+        LOG(LOG_WARN, "MSG_CREATE_CONN: Invalid client port %d", payload->client_port);
+        return;
+    }
+    // Line port must be a line port (1-2)
+    if (payload->line_port < 1 || payload->line_port > 2)
+    {
+        resp->status = STATUS_FAILURE;
+        set_error_msg(resp, "Invalid line port");
+        LOG(LOG_WARN, "MSG_CREATE_CONN: Invalid line port %d", payload->line_port);
+        return;
+    }
+    // Ports must be up
+    port_t port = {0};
+    get_port_info(payload->client_port, &port);
+    if (port.operational_state != PORT_UP)
+    {
+        resp->status = STATUS_FAILURE;
+        set_error_msg(resp, "Client port is down");
+        LOG(LOG_WARN, "MSG_CREATE_CONN: Attempted to make connection on DOWN port %d", payload->client_port);
+        return;
+    }
+    get_port_info(payload->line_port, &port);
+    if (port.operational_state != PORT_UP)
+    {
+        resp->status = STATUS_FAILURE;
+        set_error_msg(resp, "Line port is down");
+        LOG(LOG_WARN, "MSG_CREATE_CONN: Attempted to make connection on DOWN port %d", payload->line_port);
+    }
+
+    int available_conn = -1;
+    for (int i = 0; i < MAX_CONNS; i++)
+    {
+        //Check if connection is in use
+        if (conns[i].client_port != 0)
+        {
+            // Client port must not be in a connection
+            if (conns[i].client_port == payload->client_port)
+            {
+                resp->status = STATUS_FAILURE;
+                set_error_msg(resp, "Client port already in connection");
+                LOG(LOG_WARN,
+                    "MSG_CREATE_CONN: Attempted to add client port %d to connection, when it is already part of connection %s",
+                    payload->client_port, conns[i].conn_name);
+                return;
+            }
+            // Connection name must be unique
+            if (!strncmp(payload->name, conns[i].conn_name, sizeof(payload->name)))
+            {
+                resp->status = STATUS_FAILURE;
+                set_error_msg(resp, "Connection with this name exists");
+                LOG(LOG_WARN, "MSG_CREATE_CONN: Attempted to create connection with name %s, but a connection with that name already exists", payload->name);
+                return;
+            }
+        }
+        else
+        {
+            //This connection is available
+            available_conn = i;
+        }
+    }
+    if (available_conn < 0){
+        //Max connections hit
+        resp->status = STATUS_FAILURE;
+        set_error_msg(resp, "Max connections reached");
+        LOG(LOG_WARN, "MSG_CREATE_CONN: no connection slots available");
+        return;
+    }
+
+    //Create connection
+    conns[available_conn].client_port = payload->client_port;
+    conns[available_conn].line_port = payload->line_port;
+    strncpy(conns[available_conn].conn_name, payload->name, MAX_CONN_NAME_CHARACTER);
+    resp->status = STATUS_SUCCESS;
 }
 
 void handle_get_connections(udp_message_t *resp)
